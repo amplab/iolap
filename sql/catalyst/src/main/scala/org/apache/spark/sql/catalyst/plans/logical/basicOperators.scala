@@ -85,6 +85,9 @@ case class Generate(
 
 case class Filter(condition: Expression, child: LogicalPlan) extends UnaryNode {
   override def output: Seq[Attribute] = child.output
+
+  // Hack: consider most filters in TPC-H
+  override def statistics: Statistics = Statistics(child.statistics.sizeInBytes / 5)
 }
 
 case class Union(left: LogicalPlan, right: LogicalPlan) extends BinaryNode {
@@ -128,6 +131,11 @@ case class Join(
   override lazy val resolved: Boolean = {
     childrenResolved && !expressions.exists(!_.resolved) && selfJoinResolved
   }
+
+  // Hack: since most joins in TPC-H and TPC-DS benchmarks are foreign-key joins,
+  //  this should work well.
+  override def statistics: Statistics =
+    Statistics(sizeInBytes = children.map(_.statistics.sizeInBytes).max)
 }
 
 case class Except(left: LogicalPlan, right: LogicalPlan) extends BinaryNode {
@@ -205,6 +213,9 @@ case class Aggregate(
   }
 
   override def output: Seq[Attribute] = aggregateExpressions.map(_.toAttribute)
+
+  // Hack: this hack is rougly based on TPC-H.
+  override def statistics: Statistics = Statistics(10485760L)
 }
 
 case class Window(

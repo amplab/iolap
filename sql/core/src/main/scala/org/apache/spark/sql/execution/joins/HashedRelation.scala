@@ -29,7 +29,7 @@ import org.apache.spark.util.collection.CompactBuffer
  * Interface for a hashed relation by some key. Use [[HashedRelation.apply]] to create a concrete
  * object.
  */
-private[joins] sealed trait HashedRelation {
+private[sql] sealed trait HashedRelation {
   def get(key: Row): CompactBuffer[Row]
 
   // This is a helper method to implement Externalizable, and is used by
@@ -100,7 +100,7 @@ private[joins] final class UniqueKeyHashedRelation(private var hashTable: JavaHa
 // TODO(rxin): a version of [[HashedRelation]] backed by arrays for consecutive integer keys.
 
 
-private[joins] object HashedRelation {
+private[sql] object HashedRelation {
 
   def apply(
       input: Iterator[Row],

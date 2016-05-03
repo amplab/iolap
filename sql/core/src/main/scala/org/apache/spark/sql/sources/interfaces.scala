@@ -176,6 +176,8 @@ abstract class BaseRelation {
   def sqlContext: SQLContext
   def schema: StructType
 
+  var tableName: Option[String] = None
+
   /**
    * Returns an estimated size of this relation in bytes. This information is used by the planner
    * to decided when it is safe to broadcast a relation and can be overridden by sources that

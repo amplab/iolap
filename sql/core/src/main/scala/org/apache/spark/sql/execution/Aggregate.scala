@@ -17,15 +17,13 @@
 
 package org.apache.spark.sql.execution
 
-import java.util.HashMap
+import java.util.{HashMap => JHashMap, HashSet => JHashSet}
 
 import org.apache.spark.annotation.DeveloperApi
-import org.apache.spark.SparkContext
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.errors._
 import org.apache.spark.sql.catalyst.expressions._
 import org.apache.spark.sql.catalyst.plans.physical._
-import org.apache.spark.sql.SQLContext
 
 /**
  * :: DeveloperApi ::
@@ -46,7 +44,7 @@ case class Aggregate(
     child: SparkPlan)
   extends UnaryNode {
 
-  override def requiredChildDistribution: List[Distribution] = {
+  override def requiredChildDistribution: Seq[Distribution] = {
     if (partial) {
       UnspecifiedDistribution :: Nil
     } else {
@@ -74,15 +72,19 @@ case class Aggregate(
       resultAttribute: AttributeReference)
 
   /** A list of aggregates that need to be computed for each group. */
-  private[this] val computedAggregates = aggregateExpressions.flatMap { agg =>
-    agg.collect {
-      case a: AggregateExpression =>
-        ComputedAggregate(
-          a,
-          BindReferences.bindReference(a, child.output),
-          AttributeReference(s"aggResult:$a", a.dataType, a.nullable)())
-    }
-  }.toArray
+  private[this] val computedAggregates = {
+    val seen = new JHashSet[AggregateExpression]()
+    aggregateExpressions.flatMap { agg =>
+      agg.collect {
+        case a: AggregateExpression if !seen.contains(a) =>
+          seen.add(a)
+          ComputedAggregate(
+            a,
+            BindReferences.bindReference(a, child.output),
+            AttributeReference(s"aggResult:$a", a.dataType, a.nullable)())
+      }
+    }.toArray
+  }
 
   /** The schema of the result of all aggregate evaluations */
   private[this] val computedSchema = computedAggregates.map(_.resultAttribute)
@@ -147,7 +149,7 @@ case class Aggregate(
       }
     } else {
       child.execute().mapPartitions { iter =>
-        val hashTable = new HashMap[Row, Array[AggregateFunction]]
+        val hashTable = new JHashMap[Row, Array[AggregateFunction]]
         val groupingProjection = new InterpretedMutableProjection(groupingExpressions, child.output)
 
         var currentRow: Row = null

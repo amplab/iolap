@@ -21,28 +21,28 @@ import java.beans.Introspector
 import java.util.Properties
 import java.util.concurrent.atomic.AtomicReference
 
+import org.apache.spark.SparkContext
+import org.apache.spark.annotation.{DeveloperApi, Experimental}
+import org.apache.spark.api.java.{JavaRDD, JavaSparkContext}
+import org.apache.spark.rdd.RDD
+import org.apache.spark.sql.catalyst.analysis._
+import org.apache.spark.sql.catalyst.errors.DialectException
+import org.apache.spark.sql.catalyst.expressions._
+import org.apache.spark.sql.catalyst.optimizer.{DefaultOptimizer, Optimizer}
+import org.apache.spark.sql.catalyst.plans.logical.{LocalRelation, LogicalPlan}
+import org.apache.spark.sql.catalyst.rules.{Rule, RuleExecutor}
+import org.apache.spark.sql.catalyst.{ParserDialect, ScalaReflection, _}
+import org.apache.spark.sql.execution.joins.BroadcastHashJoin
+import org.apache.spark.sql.execution.{Filter, _}
+import org.apache.spark.sql.sources._
+import org.apache.spark.sql.types._
+import org.apache.spark.util.Utils
+
 import scala.collection.JavaConversions._
 import scala.collection.immutable
 import scala.language.implicitConversions
 import scala.reflect.runtime.universe.TypeTag
 import scala.util.control.NonFatal
-
-import org.apache.spark.SparkContext
-import org.apache.spark.annotation.{DeveloperApi, Experimental}
-import org.apache.spark.api.java.{JavaRDD, JavaSparkContext}
-import org.apache.spark.rdd.RDD
-import org.apache.spark.sql.catalyst._
-import org.apache.spark.sql.catalyst.analysis._
-import org.apache.spark.sql.catalyst.expressions._
-import org.apache.spark.sql.catalyst.errors.DialectException
-import org.apache.spark.sql.catalyst.optimizer.{DefaultOptimizer, Optimizer}
-import org.apache.spark.sql.catalyst.plans.logical.{LocalRelation, LogicalPlan}
-import org.apache.spark.sql.catalyst.rules.RuleExecutor
-import org.apache.spark.sql.catalyst.ParserDialect
-import org.apache.spark.sql.execution.{Filter, _}
-import org.apache.spark.sql.sources._
-import org.apache.spark.sql.types._
-import org.apache.spark.util.Utils
 
 /**
  * The entry point for working with structured data (rows and columns) in Spark.  Allows the
@@ -893,7 +893,7 @@ class SQLContext(@transient val sparkContext: SparkContext)
   @transient
   protected[sql] val prepareForExecution = new RuleExecutor[SparkPlan] {
     val batches =
-      Batch("Add exchange", Once, EnsureRequirements(self)) :: Nil
+      Batch("Add exchange", Once, EnsureRequirements(self), KickOffBroadcast) :: Nil
   }
 
   protected[sql] def openSession(): SQLSession = {
@@ -1380,5 +1380,13 @@ object SQLContext {
     INSTANTIATION_LOCK.synchronized {
       lastInstantiatedContext.set(sqlContext)
     }
+  }
+}
+
+object KickOffBroadcast extends Rule[SparkPlan] {
+  override def apply(plan: SparkPlan): SparkPlan = plan.transformUp {
+    case join: BroadcastHashJoin =>
+      join.broadcastFuture
+      join
   }
 }

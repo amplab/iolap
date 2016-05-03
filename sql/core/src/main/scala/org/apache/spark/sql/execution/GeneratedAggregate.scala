@@ -69,7 +69,7 @@ case class GeneratedAggregate(
   protected override def doExecute(): RDD[Row] = {
     val aggregatesToCompute = aggregateExpressions.flatMap { a =>
       a.collect { case agg: AggregateExpression => agg}
-    }
+    }.distinct
 
     // If you add any new function support, please add tests in org.apache.spark.sql.SQLQuerySuite
     // (in test "aggregation with codegen").
@@ -208,9 +208,9 @@ case class GeneratedAggregate(
 
     val computationSchema = computeFunctions.flatMap(_.schema)
 
-    val resultMap: Map[TreeNodeRef, Expression] =
+    val resultMap: Map[Expression, Expression] =
       aggregatesToCompute.zip(computeFunctions).map {
-        case (agg, func) => new TreeNodeRef(agg) -> func.result
+        case (agg, func) => agg -> func.result
       }.toMap
 
     val namedGroups = groupingExpressions.zipWithIndex.map {
@@ -224,7 +224,7 @@ case class GeneratedAggregate(
     // The set of expressions that produce the final output given the aggregation buffer and the
     // grouping expressions.
     val resultExpressions = aggregateExpressions.map(_.transform {
-      case e: Expression if resultMap.contains(new TreeNodeRef(e)) => resultMap(new TreeNodeRef(e))
+      case e: Expression if resultMap.contains(e) => resultMap(e)
       case e: Expression if groupMap.contains(e) => groupMap(e)
     })
 

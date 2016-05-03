@@ -984,6 +984,22 @@ private[spark] class BlockManager(
     get(blockId).map(_.data.next())
   }
 
+  def getSingle(blockId: BlockId, cacheRemote: StorageLevel): Option[Any] = {
+    val local = getLocal(blockId)
+    if (local.isDefined) {
+      logInfo(s"Found block $blockId locally")
+      return local.map(_.data.next())
+    }
+    val remote = getRemote(blockId)
+    if (remote.isDefined) {
+      val remoteData = remote.map(_.data.next())
+      putSingle(blockId, remoteData.get, cacheRemote, tellMaster = true)
+      logInfo(s"Found block $blockId remotely")
+      return remoteData
+    }
+    None
+  }
+
   /**
    * Write a block consisting of a single object.
    */

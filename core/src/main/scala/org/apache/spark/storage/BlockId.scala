@@ -85,6 +85,16 @@ case class StreamBlockId(streamId: Int, uniqueId: Long) extends BlockId {
   override def name: String = "input-" + streamId + "-" + uniqueId
 }
 
+@DeveloperApi
+case class OLABlockId(opId: Int, batchId: Int, splitIndex: Int) extends BlockId {
+  override def name: String = s"ola_${opId}_${batchId}_$splitIndex"
+}
+
+@DeveloperApi
+case class LazyBlockId(opId: Int, batchId: Int, splitIndex: Int) extends BlockId {
+  override def name: String = s"lazy_${opId}_${batchId}_$splitIndex"
+}
+
 /** Id associated with temporary local data managed as blocks. Not serializable. */
 private[spark] case class TempLocalBlockId(id: UUID) extends BlockId {
   override def name: String = "temp_local_" + id
@@ -109,6 +119,8 @@ object BlockId {
   val BROADCAST = "broadcast_([0-9]+)([_A-Za-z0-9]*)".r
   val TASKRESULT = "taskresult_([0-9]+)".r
   val STREAM = "input-([0-9]+)-([0-9]+)".r
+  val OLA = "ola_([0-9]+)_([0-9]+)_([0-9]+)".r
+  val LAZY = "lazy_([0-9]+)_([0-9]+)_([0-9]+)".r
   val TEST = "test_(.*)".r
 
   /** Converts a BlockId "name" String back into a BlockId. */
@@ -127,6 +139,10 @@ object BlockId {
       TaskResultBlockId(taskId.toLong)
     case STREAM(streamId, uniqueId) =>
       StreamBlockId(streamId.toInt, uniqueId.toLong)
+    case OLA(opId, batchId, splitIndex) =>
+      OLABlockId(opId.toInt, batchId.toInt, splitIndex.toInt)
+    case LAZY(opId, batchId, splitIndex) =>
+      LazyBlockId(opId.toInt, batchId.toInt, splitIndex.toInt)
     case TEST(value) =>
       TestBlockId(value)
     case _ =>

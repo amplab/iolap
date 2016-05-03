@@ -17,41 +17,35 @@
 
 package org.apache.spark.sql.hive
 
-import java.io.{BufferedReader, File, InputStreamReader, PrintStream}
+import java.io.File
 import java.net.{URL, URLClassLoader}
 import java.sql.Timestamp
 import java.util.{ArrayList => JArrayList}
 
-import org.apache.hadoop.hive.ql.parse.VariableSubstitution
-import org.apache.spark.sql.catalyst.ParserDialect
-
-import scala.collection.JavaConversions._
-import scala.collection.mutable.{ArrayBuffer, HashMap}
-import scala.language.implicitConversions
-
 import org.apache.hadoop.fs.{FileSystem, Path}
 import org.apache.hadoop.hive.conf.HiveConf
-import org.apache.hadoop.hive.ql.Driver
 import org.apache.hadoop.hive.ql.metadata.Table
 import org.apache.hadoop.hive.ql.parse.VariableSubstitution
-import org.apache.hadoop.hive.ql.processors._
 import org.apache.hadoop.hive.ql.session.SessionState
 import org.apache.hadoop.hive.serde2.io.{DateWritable, TimestampWritable}
-
-import org.apache.spark.{SparkConf, SparkContext}
+import org.apache.spark.SparkContext
 import org.apache.spark.annotation.Experimental
-import org.apache.spark.deploy.SparkHadoopUtil
 import org.apache.spark.sql._
 import org.apache.spark.sql.catalyst.analysis.{Analyzer, EliminateSubQueries, OverrideCatalog, OverrideFunctionRegistry}
 import org.apache.spark.sql.catalyst.plans.logical._
-import org.apache.spark.sql.execution.{ExecutedCommand, ExtractPythonUdfs, QueryExecutionException, SetCommand}
+import org.apache.spark.sql.catalyst.rules.Rule
+import org.apache.spark.sql.catalyst.{CatalystConf, ParserDialect}
+import org.apache.spark.sql.execution.{ExecutedCommand, ExtractPythonUdfs, LogicalRDD, SetCommand}
 import org.apache.spark.sql.hive.client._
 import org.apache.spark.sql.hive.execution.{DescribeHiveTableCommand, HiveNativeCommand}
-import org.apache.spark.sql.sources.{DDLParser, DataSourceStrategy}
-import org.apache.spark.sql.catalyst.CatalystConf
+import org.apache.spark.sql.hive.online.OnlineSQLConf
+import org.apache.spark.sql.sources.{DataSourceStrategy, LogicalRelation}
 import org.apache.spark.sql.types._
 import org.apache.spark.util.Utils
 
+import scala.collection.JavaConversions._
+import scala.collection.mutable.HashMap
+import scala.language.implicitConversions
 
 /**
  * This is the HiveQL Dialect, this dialect is strongly bind with HiveContext
@@ -61,6 +55,8 @@ private[hive] class HiveQLDialect extends ParserDialect {
     HiveQl.parseSql(sqlText)
   }
 }
+
+import scala.language.implicitConversions
 
 /**
  * An instance of the Spark SQL execution engine that integrates with data stored in Hive.
@@ -388,6 +384,7 @@ class HiveContext(sc: SparkContext) extends SQLContext(sc) {
         ExtractPythonUdfs ::
         ResolveHiveWindowFunction ::
         sources.PreInsertCastAndRename ::
+        ExtractTableName(self) ::
         Nil
 
       override val extendedCheckRules = Seq(
@@ -586,5 +583,22 @@ private[hive] object HiveContext {
     case (s: String, StringType) => "\"" + s + "\""
     case (decimal, DecimalType()) => decimal.toString
     case (other, tpe) if primitiveTypes contains tpe => other.toString
+  }
+}
+
+case class ExtractTableName(sqlContext: SQLContext) extends Rule[LogicalPlan] {
+  private[this] val conf = new OnlineSQLConf(sqlContext)
+
+  def apply(plan: LogicalPlan): LogicalPlan = {
+    val streamed = conf.streamedRelations
+    plan.transform {
+      case subquery@Subquery(tableName, LogicalRelation(relation)) =>
+        relation.tableName = if (streamed.contains(tableName)) Some(tableName) else None
+        subquery
+
+      case subquery@Subquery(tableName, LogicalRDD(_, rdd)) =>
+        rdd.setName(tableName)
+        subquery
+    }
   }
 }
